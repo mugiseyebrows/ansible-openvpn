@@ -1,0 +1,5 @@
+route_all_traffic: true
+issued:
+- bob
+- alice
+revoked: []

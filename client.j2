@@ -1,0 +1,7 @@
+client
+dev tun
+remote {{ remote }}
+ca ca.crt
+cert {{ item }}.crt
+key {{ item }}.key
+tls-auth ta.key 1

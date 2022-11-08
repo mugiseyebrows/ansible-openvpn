@@ -1,0 +1,117 @@
+---
+- name: Setup openvpn service, init pki, issue and revoke certificates, configure routing
+  hosts: all
+  vars_files: 
+  - vars.yml
+  vars: 
+    remote: "{{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }}"
+  tasks:
+
+  - name: Install openvpn, easy-rsa and zip
+    apt:
+      pkg:
+      - openvpn
+      - easy-rsa
+      - zip
+      update_cache: yes 
+
+  - name: Stat /root/openvpn-ca
+    stat:
+      path: /root/openvpn-ca
+    register: ca_dir
+
+  - name: Stat /root/openvpn-ca/pki/ca.crt
+    stat:
+      path: /root/openvpn-ca/pki/ca.crt
+    register: ca_cert
+
+  - name: Make cadir
+    command: make-cadir /root/openvpn-ca
+    when: not ca_dir.stat.exists
+
+  - name: Init pki
+    shell: 
+      cmd: |
+        export EASYRSA_REQ_CN="Easy-RSA CA"
+        ./easyrsa init-pki
+        ./easyrsa --batch build-ca nopass
+        ./easyrsa build-server-full server nopass
+        ./easyrsa gen-dh
+        ./easyrsa gen-crl
+        openvpn --genkey secret pki/ta.key
+        cp pki/ca.crt pki/issued/server.crt pki/private/server.key pki/crl.pem pki/dh.pem pki/ta.key /etc/openvpn
+      chdir: /root/openvpn-ca
+    when: not ca_cert.stat.exists
+
+  - name: Append ip tables
+    iptables: 
+      table: nat
+      chain: POSTROUTING
+      out_interface: eth0
+      source: 10.8.0.0/24
+      jump: MASQUERADE
+    when: route_all_traffic
+
+  - name: Enable IPv4 forwarding
+    sysctl:
+      name: net.ipv4.ip_forward
+      value: 1
+      state: present
+      reload: True
+    when: route_all_traffic
+
+  - name: Enable service
+    systemd:
+      name: openvpn@server
+      state: started
+      enabled: yes
+
+  - name: Write server conf
+    template:
+      src: server.j2
+      dest: /etc/openvpn/server.conf
+  
+  - name: Write client conf
+    template:
+      src: client.j2
+      dest: /root/openvpn-ca/{{ item }}.conf
+    loop: "{{ issued }}"
+
+  - name: Issue client cert
+    shell:
+      cmd: |
+        if [ ! -f "/root/openvpn-ca/pki/issued/{{ item }}.crt" ]; then
+          echo issue {{ item }}
+          ./easyrsa build-client-full {{ item }} nopass
+        fi
+        cp {{ item }}.conf {{ item }}.ovpn
+        mkdir {{ item }}
+        cp pki/ca.crt pki/private/{{ item }}.key pki/issued/{{ item }}.crt {{ item }}.conf {{ item }}.ovpn pki/ta.key {{ item }}
+        zip -r {{ item }}.zip {{ item }}
+      chdir: /root/openvpn-ca
+    ignore_errors: true
+    loop: "{{ issued }}"
+    
+  - name: Revoke client cert
+    shell:
+      cmd: |
+        ./easyrsa revoke {{ item }}
+        cp pki/crl.pem /etc/openvpn
+      chdir: /root/openvpn-ca
+    loop: "{{ revoked }}"
+
+  - name: Fetch files
+    fetch:
+      src: /root/openvpn-ca/{{ item }}.zip
+      dest: /tmp/{{ item }}.zip
+      flat: yes
+    ignore_errors: true
+    loop: "{{ issued }}"
+    
+  - name: Cleanup
+    shell:
+      cmd: |
+        rm -f {{ item }}.zip
+        rm -rf {{ item }}
+      chdir: /root/openvpn-ca
+    loop: "{{ issued }}"

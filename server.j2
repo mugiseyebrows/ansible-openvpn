@@ -1,0 +1,16 @@
+dev tun
+ca ca.crt
+cert server.crt
+key server.key
+crl-verify crl.pem
+dh dh.pem
+server 10.8.0.0 255.255.255.0
+client-to-client
+ifconfig-pool-persist ipp.txt
+keepalive 10 120
+{% if route_all_traffic %}
+push "redirect-gateway def1"
+{% endif %}
+verb 3
+explicit-exit-notify 1
+tls-auth ta.key 0
