@@ -88,6 +88,17 @@
         mkdir {{ item }}
         cp pki/ca.crt pki/private/{{ item }}.key pki/issued/{{ item }}.crt {{ item }}.conf {{ item }}.ovpn pki/ta.key {{ item }}
         zip -r {{ item }}.zip {{ item }}
+
+        echo "client\n\ndev tun\n\nremote {{ remote }}\n\n<ca>\n" > {{ item }}.ovpn
+        cat pki/ca.crt >> {{ item }}.ovpn
+        echo "\n</ca>\n\n<cert>\n" >> {{ item }}.ovpn
+        cat pki/issued/{{ item }}.crt >> {{ item }}.ovpn
+        echo "\n</cert>\n\n<key>\n" >> {{ item }}.ovpn
+        cat pki/private/{{ item }}.key >> {{ item }}.ovpn
+        echo "\n</key>\n\n<tls-auth>\n" >> {{ item }}.ovpn
+        cat pki/ta.key >> {{ item }}.ovpn
+        echo "\n</tls-auth>\nkey-direction 1" >> {{ item }}.ovpn
+
       chdir: /root/openvpn-ca
     ignore_errors: true
     loop: "{{ issued }}"
@@ -100,10 +111,18 @@
       chdir: /root/openvpn-ca
     loop: "{{ revoked }}"
 
-  - name: Fetch files
+  - name: Fetch zip files
     fetch:
       src: /root/openvpn-ca/{{ item }}.zip
       dest: /tmp/{{ item }}.zip
+      flat: yes
+    ignore_errors: true
+    loop: "{{ issued }}"
+
+  - name: Fetch ovpn files
+    fetch:
+      src: /root/openvpn-ca/{{ item }}.ovpn
+      dest: /tmp/{{ item }}.ovpn
       flat: yes
     ignore_errors: true
     loop: "{{ issued }}"
@@ -112,6 +131,7 @@
     shell:
       cmd: |
         rm -f {{ item }}.zip
+        rm -f {{ item }}.ovpn
         rm -rf {{ item }}
       chdir: /root/openvpn-ca
     loop: "{{ issued }}"
