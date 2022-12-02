@@ -4,7 +4,7 @@ cert server.crt
 key server.key
 crl-verify crl.pem
 dh dh.pem
-server 10.8.0.0 255.255.255.0
+server {{ vpn_ip }} {{ vpn_mask }}
 client-to-client
 ifconfig-pool-persist ipp.txt
 keepalive 10 120

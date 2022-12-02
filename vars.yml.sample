@@ -1,4 +1,7 @@
 route_all_traffic: true
+vpn_ip: 10.8.0.0 
+vpn_mask: 255.255.255.0
+ca_path: /root/openvpn-ca
 issued:
 - bob
 - alice
