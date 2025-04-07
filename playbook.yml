@@ -1,5 +1,5 @@
 ---
-- name: Install openvpn, setup openvpn service, init pki, issue and revoke certificates, configure routing, fetch certificates and config
+- name: Install openvpn, setup openvpn service, init pki, issue and revoke certificates, configure routing, fetch clients configurations keys and certs
   hosts: all
   vars_files: 
   - vars.yml
@@ -7,13 +7,16 @@
     remote: "{{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }}"
   tasks:
 
-  - name: Install openvpn, easy-rsa and zip
+  - name: Install openvpn and easy-rsa
     apt:
       pkg:
       - openvpn
       - easy-rsa
-      - zip
       update_cache: yes 
+
+  - name: Install vpnconf
+    ansible.builtin.pip:
+      name: vpnconf
 
   - name: Install iptables-persistent
     apt:
@@ -44,8 +47,8 @@
         ./easyrsa build-server-full server nopass
         ./easyrsa gen-dh
         ./easyrsa gen-crl
-        openvpn --genkey secret pki/ta.key
-        cp pki/ca.crt pki/issued/server.crt pki/private/server.key pki/crl.pem pki/dh.pem pki/ta.key /etc/openvpn
+        openvpn --genkey --secret pki/private/ta.key
+        cp pki/ca.crt pki/issued/server.crt pki/private/server.key pki/crl.pem pki/dh.pem pki/private/ta.key /etc/openvpn
       chdir: "{{ ca_path }}"
     when: not ca_cert.stat.exists
 
@@ -74,34 +77,15 @@
     template:
       src: server.j2
       dest: /etc/openvpn/server.conf
-  
-  - name: Write client conf
-    template:
-      src: client.j2
-      dest: "{{ ca_path }}/{{ item }}.conf"
-    loop: "{{ issued }}"
 
   - name: Issue client cert
     shell:
       cmd: |
-        if [ ! -f "{{ ca_path }}/pki/issued/{{ item }}.crt" ]; then
+        if [ ! -f "pki/issued/{{ item }}.crt" ]; then
           ./easyrsa build-client-full {{ item }} nopass
         fi
-        cp {{ item }}.conf {{ item }}.ovpn
-        mkdir {{ item }}
-        cp pki/ca.crt pki/private/{{ item }}.key pki/issued/{{ item }}.crt {{ item }}.conf {{ item }}.ovpn pki/ta.key {{ item }}
-        zip -r {{ item }}.zip {{ item }}
-
-        echo "client\n\ndev tun\n\nremote {{ remote }}\n\n<ca>\n" > {{ item }}.ovpn
-        cat pki/ca.crt >> {{ item }}.ovpn
-        echo "\n</ca>\n\n<cert>\n" >> {{ item }}.ovpn
-        cat pki/issued/{{ item }}.crt >> {{ item }}.ovpn
-        echo "\n</cert>\n\n<key>\n" >> {{ item }}.ovpn
-        cat pki/private/{{ item }}.key >> {{ item }}.ovpn
-        echo "\n</key>\n\n<tls-auth>\n" >> {{ item }}.ovpn
-        cat pki/ta.key >> {{ item }}.ovpn
-        echo "\n</tls-auth>\nkey-direction 1" >> {{ item }}.ovpn
-
+        python3 -m vpnconf --output {{ item }}.ovpn --host {{ remote }} --ca pki/ca.crt --cert pki/issued/{{ item }}.crt pki/private/{{ item }}.key --ta pki/private/ta.key
+        python3 -m vpnconf --output {{ item }}.zip --host {{ remote }} --ca pki/ca.crt --cert pki/issued/{{ item }}.crt pki/private/{{ item }}.key --ta pki/private/ta.key
       chdir: "{{ ca_path }}"
     ignore_errors: true
     loop: "{{ issued }}"
@@ -114,12 +98,12 @@
       chdir: "{{ ca_path }}"
     loop: "{{ revoked }}"
 
-  - name: Enable service
+  - name: Enable and start service
     systemd:
+      enabled: true
       name: openvpn@server
-      state: restarted
-      enabled: yes
-
+      state: started
+      
   - name: Fetch zip files
     fetch:
       src: "{{ ca_path }}/{{ item }}.zip"
@@ -145,11 +129,5 @@
   - name: Cleanup ovpn
     file:
       path: "{{ ca_path }}/{{ item }}.ovpn"
-      state: absent
-    loop: "{{ issued }}"
-
-  - name: Cleanup dir
-    file:
-      path: "{{ ca_path }}/{{ item }}"
       state: absent
     loop: "{{ issued }}"

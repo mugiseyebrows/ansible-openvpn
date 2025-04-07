@@ -2,9 +2,9 @@
 
 ## Usage
 
-1) Copy `inventory.yml.sample` to `inventory.yml`, edit host ip.
+1) Edit `inventory.yml`.
 
-2) Copy `vars.yml.sample` to `vars.yml`, edit certificates list and routing option.
+2) Edit `vars.yml`.
 
 3) Open shell, cd to directory and run playbook.
 
@@ -14,9 +14,9 @@ ansible-playbook -i inventory.yml playbook.yml
 
 Client configs are generated in two formats:
 
-1) zipped bundle of files (conf ca cert key ta ovpn) 
+1) zipped bundle of files (conf ca cert key ta) 
 
-2) self contained ovpn file with inline certs and keys
+2) ovpn file
 
 Configs are fetched to `/tmp` directory on local machine
 
