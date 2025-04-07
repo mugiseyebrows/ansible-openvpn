@@ -1,2 +1,4 @@
 ansible.cfg
 exp.tmp
+vars.yml
+inventory.yml
